@@ -1,0 +1,37 @@
+
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+
+# Virtual environments
+.venv/
+venv/
+venv_test/
+
+# Environment variables and secrets
+.env
+.env.*
+!.env.example
+
+# Vector database
+data/chroma_db/
+
+# Uploaded private documents
+uploads/
+documents/
+
+# Frontend
+frontend/node_modules/
+frontend/dist/
+
+# IDE
+.vscode/
+.idea/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
