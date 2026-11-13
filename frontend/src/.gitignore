@@ -14,16 +14,19 @@ venv_test/
 .env.*
 !.env.example
 
-# Vector database
+# Vector databases and generated indexes
 data/chroma_db/
+vector_db/
+vectorstore/
 
-# Uploaded private documents
+# Uploaded documents
 uploads/
 documents/
 
 # Frontend
 frontend/node_modules/
 frontend/dist/
+frontend/.vite/
 
 # IDE
 .vscode/
@@ -32,6 +35,13 @@ frontend/dist/
 # OS
 .DS_Store
 Thumbs.db
+desktop.ini
 
 # Logs
 *.log
+
+# Testing and coverage
+.pytest_cache/
+.mypy_cache/
+.coverage
+htmlcov/

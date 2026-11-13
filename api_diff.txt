@@ -1,0 +1,353 @@
+﻿diff --git a/src/api_server.py b/src/api_server.py
+index 37c926d..346838c 100644
+--- a/src/api_server.py
++++ b/src/api_server.py
+@@ -1,49 +1,298 @@
+ 
+-from fastapi import FastAPI, HTTPException
+-from pydantic import BaseModel, Field
++import os
++import tempfile
++from pathlib import Path
+ from functools import lru_cache
+ 
++from fastapi import (
++    FastAPI,
++    HTTPException,
++    UploadFile,
++    File
++)
++from fastapi.middleware.cors import CORSMiddleware
++from pydantic import BaseModel, Field
++
+ from src.rag_pipeline import RAGPipeline
++from src.pdf_processor import process_pdf
++from src.text_chunker import create_chunks, get_chunk_statistics
++from src.embedding_engine import generate_embeddings
++from src.vector_store import VectorStore
+ 
+ 
++# ==========================================
++# DOCUMIND AI - FASTAPI APPLICATION
++# ==========================================
++
+ app = FastAPI(
+     title="DocuMind AI",
+-    description="AI-powered Document Intelligence Platform",
++    description="AI-Powered Document Intelligence Platform",
+     version="1.0.0"
+ )
+ 
+ 
++# ==========================================
++# CORS CONFIGURATION
++# ==========================================
++
++app.add_middleware(
++    CORSMiddleware,
++    allow_origins=["*"],
++    allow_credentials=False,
++    allow_methods=["*"],
++    allow_headers=["*"],
++)
++
++
++# ==========================================
++# REQUEST VALIDATION
++# ==========================================
++
+ class ChatRequest(BaseModel):
+-    question: str = Field(min_length=1, max_length=5000)
+-    top_k: int = Field(default=5, ge=1, le=20)
+ 
++    question: str = Field(
++        min_length=1,
++        max_length=5000
++    )
++
++    top_k: int = Field(
++        default=5,
++        ge=1,
++        le=20
++    )
++
++
++# ==========================================
++# INITIALIZE COMPONENTS
++# ==========================================
+ 
+ @lru_cache(maxsize=1)
+ def get_rag_pipeline():
+-    return RAGPipeline(model="qwen3:4b")
++
++    return RAGPipeline(
++        model="qwen3:4b"
++    )
+ 
+ 
++@lru_cache(maxsize=1)
++def get_vector_store():
++
++    return VectorStore(
++        collection_name="documind_documents_v2"
++    )
++
++
++# ==========================================
++# HOME ENDPOINT
++# ==========================================
++
+ @app.get("/")
+ def home():
++
+     return {
+         "project": "DocuMind AI",
+-        "status": "running",
+-        "version": "1.0.0"
++        "description": "AI-Powered Document Intelligence",
++        "version": "1.0.0",
++        "status": "running"
+     }
+ 
+ 
++# ==========================================
++# HEALTH CHECK
++# ==========================================
++
+ @app.get("/health")
+ def health():
++
+     return {
+         "status": "healthy",
+         "service": "DocuMind AI API"
+     }
+ 
+ 
++# ==========================================
++# PDF UPLOAD AND INDEXING
++# ==========================================
++
++@app.post("/upload")
++async def upload_document(file: UploadFile = File(...)):
++
++    temporary_path = None
++
++    try:
++
++        # 1. Validate filename
++
++        filename = (file.filename or "").replace("\\", "/")
++        filename = Path(filename).name
++
++        if not filename:
++            raise HTTPException(
++                status_code=400,
++                detail="Invalid filename."
++            )
++
++        if not filename.lower().endswith(".pdf"):
++            raise HTTPException(
++                status_code=400,
++                detail="Only PDF files are supported."
++            )
++
++        # 2. Read uploaded file
++
++        file_content = await file.read()
++
++        MAX_FILE_SIZE = 25 * 1024 * 1024
++
++        if not file_content:
++            raise HTTPException(
++                status_code=400,
++                detail="Uploaded file is empty."
++            )
++
++        if len(file_content) > MAX_FILE_SIZE:
++            raise HTTPException(
++                status_code=413,
++                detail="PDF size must not exceed 25 MB."
++            )
++
++        # 3. Validate PDF signature
++
++        if not file_content.startswith(b"%PDF-"):
++            raise HTTPException(
++                status_code=400,
++                detail="Invalid PDF file."
++            )
++
++        # 4. Save temporarily for PDF processing
++
++        with tempfile.NamedTemporaryFile(
++            suffix=".pdf",
++            delete=False
++        ) as temporary_file:
++
++            temporary_file.write(file_content)
++
++            temporary_path = temporary_file.name
++
++        # 5. Extract PDF text and metadata
++
++        pdf_result = process_pdf(temporary_path)
++
++        pages = pdf_result.get("pages", [])
++
++        if not pages:
++            raise HTTPException(
++                status_code=422,
++                detail="No readable pages found in this PDF."
++            )
++
++        # 6. Create text chunks
++
++        chunks = create_chunks(
++            pages=pages,
++            chunk_size=1000,
++            overlap=150
++        )
++
++        if not chunks:
++            raise HTTPException(
++                status_code=422,
++                detail="No readable text found. This may be a scanned PDF."
++            )
++
++        # 7. Generate embeddings
++
++        texts = [
++            chunk["text"]
++            for chunk in chunks
++        ]
++
++        embeddings = generate_embeddings(texts)
++
++        # 8. Store chunks and embeddings in ChromaDB
++
++        vector_store = get_vector_store()
++
++        document_id = vector_store.generate_document_id(
++            filename
++        )
++
++        vector_store.add_documents(
++            chunks=chunks,
++            embeddings=embeddings,
++            filename=filename,
++            document_id=document_id
++        )
++
++        # 9. Generate chunk statistics
++
++        statistics = get_chunk_statistics(chunks)
++
++        # 10. Return upload information
++
++        upload_data = {
++            "filename": filename,
++            "document_id": document_id,
++            "file_size_kb": round(
++                len(file_content) / 1024, 2
++            ),
++            "total_pages": pdf_result.get(
++                "total_pages", len(pages)
++            ),
++            "total_chunks": statistics["total_chunks"],
++            "total_characters": statistics["total_characters"],
++            "average_chunk_size": statistics["average_chunk_size"],
++            "embedding_dimensions": int(embeddings.shape[1]),
++            "unique_pages": statistics["unique_pages"],
++            "warnings": pdf_result.get("warnings", [])
++        }
++
++        return {
++            "success": True,
++            "message": "PDF uploaded and indexed successfully.",
++            "data": upload_data,
++
++            # Also expose details at the root for frontend compatibility
++            **upload_data
++        }
++
++    except HTTPException:
++        raise
++
++    except ValueError as error:
++
++        raise HTTPException(
++            status_code=400,
++            detail=str(error)
++        )
++
++    except Exception as error:
++
++        raise HTTPException(
++            status_code=500,
++            detail=f"Document processing failed: {str(error)}"
++        )
++
++    finally:
++
++        # Remove temporary PDF after processing
++
++        if temporary_path and os.path.exists(temporary_path):
++            os.remove(temporary_path)
++
++        await file.close()
++
++
++# ==========================================
++# CHAT ENDPOINT
++# ==========================================
++
+ @app.post("/api/chat/ask")
+ def ask_question(request: ChatRequest):
+ 
+     try:
++
+         rag = get_rag_pipeline()
+ 
+         result = rag.ask(
+@@ -57,12 +306,41 @@ def ask_question(request: ChatRequest):
+         }
+ 
+     except ValueError as error:
++
+         raise HTTPException(
+             status_code=400,
+             detail=str(error)
+         )
+ 
+     except Exception as error:
++
++        raise HTTPException(
++            status_code=500,
++            detail=f"AI processing failed: {str(error)}"
++        )
++
++
++# ==========================================
++# DOCUMENT LIST ENDPOINT
++# ==========================================
++
++@app.get("/api/documents")
++def list_documents():
++
++    try:
++
++        vector_store = get_vector_store()
++
++        documents = vector_store.list_documents()
++
++        return {
++            "success": True,
++            "total_documents": len(documents),
++            "documents": documents
++        }
++
++    except Exception as error:
++
+         raise HTTPException(
+             status_code=500,
+             detail=str(error)

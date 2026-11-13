@@ -1,0 +1,40 @@
+[1mdiff --git a/frontend/src/.gitignore b/frontend/src/.gitignore[m
+[1mindex 4c2e78b..95c0253 100644[m
+[1m--- a/frontend/src/.gitignore[m
+[1m+++ b/frontend/src/.gitignore[m
+[36m@@ -14,16 +14,19 @@[m [mvenv_test/[m
+ .env.*[m
+ !.env.example[m
+ [m
+[31m-# Vector database[m
+[32m+[m[32m# Vector databases and generated indexes[m
+ data/chroma_db/[m
+[32m+[m[32mvector_db/[m
+[32m+[m[32mvectorstore/[m
+ [m
+[31m-# Uploaded private documents[m
+[32m+[m[32m# Uploaded documents[m
+ uploads/[m
+ documents/[m
+ [m
+ # Frontend[m
+ frontend/node_modules/[m
+ frontend/dist/[m
+[32m+[m[32mfrontend/.vite/[m
+ [m
+ # IDE[m
+ .vscode/[m
+[36m@@ -32,6 +35,13 @@[m [mfrontend/dist/[m
+ # OS[m
+ .DS_Store[m
+ Thumbs.db[m
+[32m+[m[32mdesktop.ini[m
+ [m
+ # Logs[m
+ *.log[m
+[32m+[m
+[32m+[m[32m# Testing and coverage[m
+[32m+[m[32m.pytest_cache/[m
+[32m+[m[32m.mypy_cache/[m
+[32m+[m[32m.coverage[m
+[32m+[m[32mhtmlcov/[m
